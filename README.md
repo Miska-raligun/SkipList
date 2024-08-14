@@ -1,4 +1,4 @@
-//test load and dump from data
-g++ -o test test.cpp&&./test
-//stress test for insert and search
-g++ -o stress stress.cpp&&./stress
+//test load and dump from data \n
+g++ -o test test.cpp&&./test \n
+//stress test for insert and search \n
+g++ -o stress stress.cpp&&./stress \n
