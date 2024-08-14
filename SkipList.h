@@ -3,6 +3,13 @@
 #include <cmath>
 #include <cstring>
 #include "Node.h"
+#include <fstream>
+#include <mutex>
+
+const std::string delimiter = ":"; // 分隔符
+static constexpr const char* WRITE_FILE = "write.txt";
+static constexpr const char* READ_FILE = "read.txt";
+std::mutex mtx;
 
 template <typename K, typename V>
 class SkipList {
@@ -26,6 +33,10 @@ private:
     Node<K, V> *header;  // 头节点
     // 其他私有成员（省略）
     int element_count;  // 节点数量
+    
+    std::ofstream _file_writer;
+    std::ifstream _file_reader;
+
 };
 
 #include "SkipList.tpp"

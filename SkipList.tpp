@@ -23,12 +23,13 @@ int SkipList<K,V>::get_random_level(){
 
 template <typename K,typename V>
 Node<K,V>* SkipList<K,V>::create_node(K key,V value,int level){
-    Node<K,V>* node=new Node(key,value,level);
+    Node<K,V>* node=new Node<K,V>(key,value,level);
     return node;
 };
 
 template <typename K, typename V>
 int SkipList<K, V>::insert_element(K key, V value) {
+    mtx.lock();
     Node<K, V>* now = this->header;
     Node<K, V>* update[max_level+1];
     memset(update,0,sizeof(Node<K,V>*)*(max_level + 1));
@@ -70,6 +71,7 @@ int SkipList<K, V>::insert_element(K key, V value) {
         }
         element_count++;
     }
+    mtx.unlock();
     return 0;
 }
 
@@ -91,15 +93,119 @@ bool SkipList<K, V>::search_element(K key) {
 };
 
 template <typename K, typename V>
+void SkipList<K, V>::delete_element(K key) {
+    mtx.lock();
+    Node<K, V>* now = this->header;
+    Node<K, V>* update[skip_list_level + 1];
+
+    // 初始化 update 数组
+    for (int i = 0; i <= skip_list_level; ++i) {
+        update[i] = nullptr;
+    }
+
+    // 从最高层向下搜索更新位置
+    for (int now_level = skip_list_level; now_level >= 0; --now_level) {
+        while (now->forwards[now_level] != nullptr && now->forwards[now_level]->get_key() < key) {
+            now = now->forwards[now_level];
+        }
+        update[now_level] = now;
+    }
+
+    // 获取要删除的节点
+    Node<K, V>* target = now->forwards[0];
+
+    // 检查是否确实找到了要删除的节点
+    if (target == nullptr || target->get_key() != key) {
+        return;  // 如果目标节点不存在，直接返回
+    }
+
+    // 删除节点并更新指针
+    for (int i = 0; i <= skip_list_level; ++i) {
+        if (update[i]->forwards[i] != target) {
+            break;  // 跳出循环，更新指针完成
+        }
+        update[i]->forwards[i] = target->forwards[i];
+    }
+
+    // 释放目标节点的内存
+    delete target;
+
+    // 检查是否需要更新 skip_list_level
+    while (skip_list_level > 0 && header->forwards[skip_list_level] == nullptr) {
+        skip_list_level--;
+    }
+
+    element_count--;
+    mtx.unlock();
+    return;
+}
+
+template <typename K, typename V>
 void SkipList<K, V>::printList() {
     for(int i=skip_list_level;i>=0;i--){
         Node<K,V>* now=header->forwards[i];
+        std::cout<<"LeveL "<<i+1<<": ";
         while(now!=nullptr){
-            std::cout<<now->get_key()<<" ";
+            std::cout<<now->get_key()<<"-"<<now->get_value()<<" ";
             now=now->forwards[i];
         }
         std::cout<<std::endl;
     }
     return;
 };
+
+template <typename K, typename V>
+void SkipList<K, V>::dump_file() {
+    _file_writer.open(WRITE_FILE); // 打开文件
+    Node<K, V>* node = this->header->forwards[0]; // 从头节点开始遍历
+
+    while (node != nullptr) {
+        _file_writer << node->get_key() << ":" << node->get_value() << ";\n"; // 写入键值对
+        node = node->forwards[0]; // 移动到下一个节点
+    }
+
+    _file_writer.flush(); // 刷新缓冲区，确保数据完全写入
+    _file_writer.close(); // 关闭文件
+}
+
+// Load data from disk
+template <typename K, typename V>
+void SkipList<K, V>::load_file() {
+    _file_reader.open(READ_FILE);
+    if (!_file_reader.is_open()) {
+        std::cerr << "Failed to open the file." << std::endl;
+        return;
+    }
+
+    std::string line;
+    std::string key;
+    std::string value;
+
+    auto is_valid_string = [&](const std::string& str) -> bool {
+        return !str.empty() && str.find(delimiter) != std::string::npos;
+    };
+
+    auto get_key_value_from_string = [&](const std::string& str, std::string& key, std::string& value) {
+        if (!is_valid_string(str)) {
+            return;
+        }
+        size_t pos = str.find(delimiter);
+        if (pos != std::string::npos) {
+            key = str.substr(0, pos);
+            value = str.substr(pos + 1);
+        }
+    };
+
+    while (getline(_file_reader, line)) {
+        get_key_value_from_string(line, key, value);
+        if (key.empty() || value.empty()) {
+            continue;
+        }
+        // Define key as int type
+        insert_element(stoi(key), value);
+        std::cout << "key: " << key << " value: " << value << std::endl;
+    }
+
+    _file_reader.close();
+}
 
