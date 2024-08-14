@@ -4,11 +4,17 @@ SkipList<K,V>::SkipList(int l):max_level(l),skip_list_level(0),element_count(0){
     K k;
     V v;
     // 创建头节点，并初始化键值为默认值
-    this->header = new Node<K, V>(k, v, max_level);
+    header = std::make_shared<Node<K, V>>(k, v, max_level);
 };
 
 template <typename K,typename V>
 SkipList<K,V>::~SkipList(){
+    if (_file_writer.is_open()) {
+        _file_writer.close();
+    }
+    if (_file_reader.is_open()) {
+        _file_reader.close();
+    }
 };
 
 template <typename K,typename V>
@@ -22,17 +28,15 @@ int SkipList<K,V>::get_random_level(){
 };
 
 template <typename K,typename V>
-Node<K,V>* SkipList<K,V>::create_node(K key,V value,int level){
-    Node<K,V>* node=new Node<K,V>(key,value,level);
-    return node;
+std::shared_ptr<Node<K,V>> SkipList<K,V>::create_node(K key,V value,int level){
+    return std::make_shared<Node<K,V>>(key,value,level);
 };
 
 template <typename K, typename V>
 int SkipList<K, V>::insert_element(K key, V value) {
-    mtx.lock();
-    Node<K, V>* now = this->header;
-    Node<K, V>* update[max_level+1];
-    memset(update,0,sizeof(Node<K,V>*)*(max_level + 1));
+    std::lock_guard<std::mutex> lock(mtx);
+    std::shared_ptr<Node<K, V>> now = header;
+    std::vector<std::shared_ptr<Node<K, V>>> update(max_level+1,nullptr);
 
     // 从最高层向下搜索插入位置
     for (int now_level = skip_list_level; now_level >= 0; --now_level) {
@@ -61,7 +65,7 @@ int SkipList<K, V>::insert_element(K key, V value) {
             skip_list_level = random_level;
         }
         
-        Node<K, V> *inserted_node = create_node(key, value, random_level);
+        std::shared_ptr<Node<K,V>> inserted_node = create_node(key, value, random_level);
         // 在各层插入新节点，同时更新前驱节点的 forward 指针
         for (int i = 0; i <= random_level; i++) {
             // 新节点指向当前节点的下一个节点
@@ -71,14 +75,13 @@ int SkipList<K, V>::insert_element(K key, V value) {
         }
         element_count++;
     }
-    mtx.unlock();
     return 0;
 }
 
 
 template <typename K, typename V>
 bool SkipList<K, V>::search_element(K key) {
-    Node<K, V>* now = header;
+    std::shared_ptr<Node<K, V>> now = header;
     
     for (int now_level = skip_list_level; now_level >= 0; --now_level) {
         while (now->forwards[now_level] != nullptr && now->forwards[now_level]->get_key() < key) {
@@ -94,14 +97,9 @@ bool SkipList<K, V>::search_element(K key) {
 
 template <typename K, typename V>
 void SkipList<K, V>::delete_element(K key) {
-    mtx.lock();
-    Node<K, V>* now = this->header;
-    Node<K, V>* update[skip_list_level + 1];
-
-    // 初始化 update 数组
-    for (int i = 0; i <= skip_list_level; ++i) {
-        update[i] = nullptr;
-    }
+    std::lock_guard<std::mutex> lock(mtx);
+    std::shared_ptr<Node<K, V>> now = header;
+    std::vector<std::shared_ptr<Node<K, V>>> update(skip_list_level + 1,nullptr);
 
     // 从最高层向下搜索更新位置
     for (int now_level = skip_list_level; now_level >= 0; --now_level) {
@@ -112,7 +110,7 @@ void SkipList<K, V>::delete_element(K key) {
     }
 
     // 获取要删除的节点
-    Node<K, V>* target = now->forwards[0];
+    std::shared_ptr<Node<K, V>> target = now->forwards[0];
 
     // 检查是否确实找到了要删除的节点
     if (target == nullptr || target->get_key() != key) {
@@ -127,23 +125,19 @@ void SkipList<K, V>::delete_element(K key) {
         update[i]->forwards[i] = target->forwards[i];
     }
 
-    // 释放目标节点的内存
-    delete target;
-
     // 检查是否需要更新 skip_list_level
     while (skip_list_level > 0 && header->forwards[skip_list_level] == nullptr) {
         skip_list_level--;
     }
 
     element_count--;
-    mtx.unlock();
     return;
 }
 
 template <typename K, typename V>
 void SkipList<K, V>::printList() {
     for(int i=skip_list_level;i>=0;i--){
-        Node<K,V>* now=header->forwards[i];
+        std::shared_ptr<Node<K,V>> now=header->forwards[i];
         std::cout<<"LeveL "<<i+1<<": ";
         while(now!=nullptr){
             std::cout<<now->get_key()<<"-"<<now->get_value()<<" ";
@@ -157,7 +151,7 @@ void SkipList<K, V>::printList() {
 template <typename K, typename V>
 void SkipList<K, V>::dump_file() {
     _file_writer.open(WRITE_FILE); // 打开文件
-    Node<K, V>* node = this->header->forwards[0]; // 从头节点开始遍历
+    std::shared_ptr<Node<K, V>> node = header->forwards[0]; // 从头节点开始遍历
 
     while (node != nullptr) {
         _file_writer << node->get_key() << ":" << node->get_value() << ";\n"; // 写入键值对
@@ -209,3 +203,7 @@ void SkipList<K, V>::load_file() {
     _file_reader.close();
 }
 
+template <typename K,typename V>
+int SkipList<K,V>::size(){
+    return element_count;
+};
